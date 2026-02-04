@@ -1,0 +1,86 @@
+/* Reset and base styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  width: 100%;
+  font-family: 'Poppins', sans-serif;
+  scroll-behavior: smooth;
+}
+
+/* Root container */
+#root {
+  min-height: 100vh;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* Theme variables */
+:root {
+  --primary-yellow: #fbbf24;     /* bright yellow */
+  --yellow-hover: #fde047;
+  --text-light: #ffffff;
+  --text-dark: #111827;
+  --bg-dark: #0f172a;
+  --bg-light: #f8fafc;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #fbbf24;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #fde047;
+}
+
+/* Smooth transitions */
+body {
+  transition: background-color 0.4s ease, color 0.4s ease;
+}
+
+/* Links */
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+/* Focus */
+button:focus, input:focus, select:focus, textarea:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.4);
+}
+
+/* Card base (optional - can be removed if not used) */
+.card {
+  border-radius: 1rem;
+  padding: 1.5rem;
+  transition: all 0.3s ease;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  #root {
+    padding: 1rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .card {
+    padding: 1rem;
+  }
+}
