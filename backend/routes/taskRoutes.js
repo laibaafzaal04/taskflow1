@@ -6,7 +6,7 @@ import {
   createTask,
   updateTask,
   deleteTask,
-    addComment
+  addComment
 } from '../controllers/taskController.js';
 import { protect } from '../middleware/authMiddleware.js';
 

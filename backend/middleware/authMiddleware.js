@@ -1,20 +1,21 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/user.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your_super_secret_jwt_key_change_this';
-
 export const protect = async (req, res, next) => {
+  const JWT_SECRET = process.env.JWT_SECRET;
+
+  if (!JWT_SECRET) {
+    throw new Error('FATAL: JWT_SECRET environment variable is not set');
+  }
+
   let token;
 
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
     try {
-      // Get token from header
       token = req.headers.authorization.split(' ')[1];
 
-      // Verify token
       const decoded = jwt.verify(token, JWT_SECRET);
 
-      // Get user from token
       req.user = await User.findById(decoded.id).select('-password');
 
       if (!req.user) {
@@ -25,18 +26,13 @@ export const protect = async (req, res, next) => {
         return res.status(401).json({ message: 'User account is disabled' });
       }
 
-      next();
+      return next();
+
     } catch (error) {
       console.error('Auth middleware error:', error);
       return res.status(401).json({ message: 'Not authorized, token failed' });
     }
   }
 
-  if (!token) {
-    return res.status(401).json({ message: 'Not authorized, no token' });
-  }
-};
-
-export const generateToken = (id) => {
-  return jwt.sign({ id }, JWT_SECRET, { expiresIn: '30d' });
+  return res.status(401).json({ message: 'Not authorized, no token' });
 };

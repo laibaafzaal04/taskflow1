@@ -4,20 +4,13 @@ import { useTheme } from '../context/themeContext';
 import KanbanBoard from '../components/projects/kanbanBoard';
 import TaskModal from '../components/projects/taskModal';
 import API from '../services/api';
+import socket from '../utils/socket';
 
 export default function Projects({ searchQuery }) {
   const { isDark } = useTheme();
-  const [tasks, setTasks] = useState({
-    todo: [],
-    inProgress: [],
-    done: []
-  });
-  const [filteredTasks, setFilteredTasks] = useState({
-    todo: [],
-    inProgress: [],
-    done: []
-  });
-  const [projects, setProjects] = useState([]); // New: For project filter dropdown
+  const [allTasks, setAllTasks] = useState([]);
+  const [filteredTasks, setFilteredTasks] = useState({ todo: [], inProgress: [], done: [] });
+  const [projects, setProjects] = useState([]);
   const [filters, setFilters] = useState({ priority: '', status: '', project: '' });
   const [sortBy, setSortBy] = useState('dueDate');
   const [loading, setLoading] = useState(true);
@@ -26,84 +19,73 @@ export default function Projects({ searchQuery }) {
 
   useEffect(() => {
     fetchData();
+    socket.on('taskUpdated', fetchData);
+    socket.on('commentAdded', fetchData);
+    return () => {
+      socket.off('taskUpdated');
+      socket.off('commentAdded');
+    };
   }, []);
 
+  // Fix: single pipeline runs whenever any dependency changes —
+  // previously search and filter were independent and clobbered each other
   useEffect(() => {
-    applyFiltersAndSort();
-  }, [searchQuery, filters, sortBy, tasks]);
+    applyPipeline(allTasks, filters, sortBy, searchQuery);
+  }, [allTasks, filters, sortBy, searchQuery]);
 
   const fetchData = async () => {
+    setLoading(true);
     try {
       const [tasksRes, projectsRes] = await Promise.all([
         API.get('/tasks'),
-        API.get('/projects') // New: Fetch projects for filter
+        API.get('/projects')
       ]);
-      const groupedTasks = {
-        todo: tasksRes.data.filter(task => task.status === 'todo'),
-        inProgress: tasksRes.data.filter(task => task.status === 'inProgress'),
-        done: tasksRes.data.filter(task => task.status === 'done')
-      };
-      setTasks(groupedTasks);
-      setFilteredTasks(groupedTasks);
+      setAllTasks(tasksRes.data);
       setProjects(projectsRes.data);
     } catch (error) {
-      console.error('Error fetching data:', error);
+      console.error('Projects fetch error:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const applyFiltersAndSort = _.debounce(() => {
-    let tempTasks = { ...tasks };
+  const applyPipeline = (tasks, currentFilters, currentSort, currentSearch) => {
+    let result = [...tasks];
 
-    // Apply search
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      Object.keys(tempTasks).forEach(status => {
-        tempTasks[status] = tempTasks[status].filter(t =>
-          t.title.toLowerCase().includes(query) || t.description.toLowerCase().includes(query)
-        );
-      });
+    // 1. Search
+    if (currentSearch?.trim()) {
+      const q = currentSearch.toLowerCase();
+      result = result.filter(t =>
+        t.title.toLowerCase().includes(q) ||
+        (t.description || '').toLowerCase().includes(q)
+      );
     }
 
-    // Apply filters
-    Object.keys(tempTasks).forEach(status => {
-      tempTasks[status] = tempTasks[status].filter(t => {
-        return (
-          (!filters.priority || t.priority === filters.priority) &&
-          (!filters.status || t.status === filters.status) &&
-          (!filters.project || t.project?._id === filters.project)
-        );
-      });
+    // 2. Filters
+    if (currentFilters.priority) result = result.filter(t => t.priority === currentFilters.priority);
+    if (currentFilters.status)   result = result.filter(t => t.status   === currentFilters.status);
+    if (currentFilters.project)  result = result.filter(t => t.project?._id === currentFilters.project);
+
+    // 3. Sort
+    if (currentSort === 'priority') {
+      const order = { high: 0, medium: 1, low: 2 };
+      result = _.sortBy(result, t => order[t.priority]);
+    } else {
+      result = _.sortBy(result, t => new Date(t.dueDate || Infinity));
+    }
+
+    // 4. Group by status
+    const grouped = _.groupBy(result, 'status');
+    setFilteredTasks({
+      todo:       grouped.todo       || [],
+      inProgress: grouped.inProgress || [],
+      done:       grouped.done       || []
     });
-
-    // Apply sorting (flatten, sort, regroup)
-    const allTasks = [...tempTasks.todo, ...tempTasks.inProgress, ...tempTasks.done];
-    allTasks.sort((a, b) => {
-      if (sortBy === 'dueDate') {
-        return new Date(a.dueDate || Infinity) - new Date(b.dueDate || Infinity);
-      } else if (sortBy === 'priority') {
-        const prioMap = { high: 3, medium: 2, low: 1 };
-        return prioMap[b.priority] - prioMap[a.priority];
-      }
-      return 0;
-    });
-
-    tempTasks = {
-      todo: allTasks.filter(t => t.status === 'todo'),
-      inProgress: allTasks.filter(t => t.status === 'inProgress'),
-      done: allTasks.filter(t => t.status === 'done'),
-    };
-
-    setFilteredTasks(tempTasks);
-  }, 300);
-
-  const handleFilterChange = (e) => {
-    setFilters({ ...filters, [e.target.name]: e.target.value });
   };
 
-  const handleSortChange = (e) => {
-    setSortBy(e.target.value);
+  const handleFilterChange = (e) => {
+    const { name, value } = e.target;
+    setFilters(prev => ({ ...prev, [name]: value }));
   };
 
   const handleAddTask = (status) => {
@@ -111,78 +93,55 @@ export default function Projects({ searchQuery }) {
     setShowTaskModal(true);
   };
 
+  const selectClassName = `px-4 py-2 rounded-xl border appearance-none transition-all ${
+    isDark
+      ? 'bg-slate-800/60 border-slate-700 text-white focus:border-amber-500'
+      : 'bg-white border-gray-200 text-gray-900 focus:border-amber-400'
+  }`;
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-500"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-yellow-500" />
       </div>
     );
   }
 
-  const selectClassName = `
-    px-4 py-2.5 rounded-xl border-2 transition-all duration-300 cursor-pointer
-    font-medium text-sm
-    hover:border-yellow-400 hover:shadow-lg hover:shadow-yellow-500/20
-    focus:outline-none focus:ring-2 focus:ring-yellow-500/50
-    ${isDark 
-      ? 'bg-slate-800/70 text-white border-slate-600 hover:bg-slate-800' 
-      : 'bg-white text-gray-900 border-gray-300 hover:bg-yellow-50/30'
-    }
-  `;
-
   return (
     <>
-      <div className="mb-6 flex gap-4 flex-wrap">
-        <select 
-          name="priority" 
-          onChange={handleFilterChange} 
-          className={selectClassName}
-        >
+      <div className="flex flex-wrap items-center gap-4 mb-6">
+        <select name="priority" value={filters.priority} onChange={handleFilterChange} className={selectClassName}>
           <option value="">All Priorities</option>
-          <option value="low">Low</option>
-          <option value="medium">Medium</option>
           <option value="high">High</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
         </select>
-        
-        <select 
-          name="status" 
-          onChange={handleFilterChange} 
-          className={selectClassName}
-        >
-          <option value="">All Statuses</option>
+
+        <select name="status" value={filters.status} onChange={handleFilterChange} className={selectClassName}>
+          <option value="">All Status</option>
           <option value="todo">To Do</option>
           <option value="inProgress">In Progress</option>
           <option value="done">Done</option>
         </select>
-        
-        <select 
-          name="project" 
-          onChange={handleFilterChange} 
-          className={selectClassName}
-        >
+
+        <select name="project" value={filters.project} onChange={handleFilterChange} className={selectClassName}>
           <option value="">All Projects</option>
           {projects.map(p => (
             <option key={p._id} value={p._id}>{p.name}</option>
           ))}
         </select>
-        
-        <select 
-          onChange={handleSortChange} 
-          className={selectClassName}
-        >
+
+        <select value={sortBy} onChange={e => setSortBy(e.target.value)} className={selectClassName}>
           <option value="dueDate">Sort by Due Date</option>
           <option value="priority">Sort by Priority</option>
         </select>
       </div>
 
-      <KanbanBoard 
-        tasks={filteredTasks}
-        onUpdate={fetchData}
-        onAddTask={handleAddTask}
-      />
+      <KanbanBoard tasks={filteredTasks} onUpdate={fetchData} onAddTask={handleAddTask} />
 
       {showTaskModal && (
-        <TaskModal 
+        <TaskModal
+          defaultStatus={defaultStatus}
           onClose={() => setShowTaskModal(false)}
           onSuccess={fetchData}
         />

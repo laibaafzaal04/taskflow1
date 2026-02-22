@@ -5,54 +5,37 @@ import TaskCard from './taskCard';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import API from '../../services/api';
 
+// Fix: static class strings so Tailwind JIT includes them in the bundle
+// Dynamic strings like `bg-${color}-500` are never detected at build time
+const COLUMN_DOT = {
+  red: 'bg-red-500',
+  yellow: 'bg-yellow-500',
+  green: 'bg-green-500',
+};
+
 export default function KanbanBoard({ tasks, onUpdate, onAddTask }) {
   const { isDark } = useTheme();
 
   const columns = {
-  todo: { 
-    id: 'todo', 
-    label: 'To Do', 
-    color: 'red',          // ← Changed to red for To Do
-    tasks: tasks.todo || [] 
-  },
-  inProgress: { 
-    id: 'inProgress', 
-    label: 'In Progress', 
-    color: 'yellow',       // ← remains yellow
-    tasks: tasks.inProgress || [] 
-  },
-  done: { 
-    id: 'done', 
-    label: 'Done', 
-    color: 'green',        // ← remains green
-    tasks: tasks.done || [] 
-  },
-};
+    todo:       { id: 'todo',       label: 'To Do',       color: 'red',    tasks: tasks.todo       || [] },
+    inProgress: { id: 'inProgress', label: 'In Progress', color: 'yellow', tasks: tasks.inProgress || [] },
+    done:       { id: 'done',       label: 'Done',        color: 'green',  tasks: tasks.done       || [] },
+  };
 
   const onDragEnd = async (result) => {
     if (!result.destination) return;
-
     const { source, destination, draggableId } = result;
-
-    if (
-      source.droppableId === destination.droppableId &&
-      source.index === destination.index
-    ) {
-      return;
-    }
+    if (source.droppableId === destination.droppableId && source.index === destination.index) return;
 
     let task = null;
     for (const col of Object.values(columns)) {
       task = col.tasks.find(t => t._id === draggableId);
       if (task) break;
     }
-
     if (!task) return;
 
-    const newStatus = destination.droppableId;
-
     try {
-      await API.put(`/tasks/${task._id}`, { status: newStatus });
+      await API.put(`/tasks/${task._id}`, { status: destination.droppableId });
       onUpdate();
     } catch (err) {
       console.error('Failed to update task status:', err);
@@ -72,25 +55,20 @@ export default function KanbanBoard({ tasks, onUpdate, onAddTask }) {
                 ref={provided.innerRef}
                 className={`
                   rounded-2xl p-5 border-2 transition-all duration-300
-                  ${isDark 
-                    ? 'bg-slate-800/50 border-slate-600/70' 
-                    : 'bg-white/95 border-gray-200/80'
-                  }
-                  ${snapshot.isDraggingOver 
-                    ? 'border-yellow-500 shadow-[0_0_20px_rgba(234,179,8,0.5)] scale-[1.02]' 
+                  ${isDark ? 'bg-slate-800/50 border-slate-600/70' : 'bg-white/95 border-gray-200/80'}
+                  ${snapshot.isDraggingOver
+                    ? 'border-yellow-500 shadow-[0_0_20px_rgba(234,179,8,0.5)] scale-[1.02]'
                     : 'border-amber-400/30 hover:border-yellow-500 hover:shadow-[0_0_15px_rgba(234,179,8,0.3)]'
                   }
                 `}
               >
                 <div className="flex items-center justify-between mb-5">
                   <div className="flex items-center gap-3">
-                    <div className={`w-3 h-3 rounded-full bg-${column.color}-500`} />
+                    <div className={`w-3 h-3 rounded-full ${COLUMN_DOT[column.color]}`} />
                     <h3 className={`font-semibold text-lg ${isDark ? 'text-white' : 'text-gray-900'}`}>
                       {column.label}
                     </h3>
-                    <span className={`text-sm px-3 py-1 rounded-full ${
-                      isDark ? 'bg-slate-700 text-slate-300' : 'bg-gray-100 text-gray-700'
-                    }`}>
+                    <span className={`text-sm px-3 py-1 rounded-full ${isDark ? 'bg-slate-700 text-slate-300' : 'bg-gray-100 text-gray-700'}`}>
                       {column.tasks.length}
                     </span>
                   </div>
@@ -110,10 +88,7 @@ export default function KanbanBoard({ tasks, onUpdate, onAddTask }) {
                           ref={provided.innerRef}
                           {...provided.draggableProps}
                           {...provided.dragHandleProps}
-                          className={`
-                            transition-all duration-200
-                            ${snapshot.isDragging ? 'opacity-80 rotate-1 scale-[1.02] shadow-2xl z-10' : ''}
-                          `}
+                          className={`transition-all duration-200 ${snapshot.isDragging ? 'opacity-80 rotate-1 scale-[1.02] shadow-2xl z-10' : ''}`}
                         >
                           <TaskCard task={task} onUpdate={onUpdate} />
                         </div>
@@ -121,7 +96,7 @@ export default function KanbanBoard({ tasks, onUpdate, onAddTask }) {
                     </Draggable>
                   ))}
                   {provided.placeholder}
-                  
+
                   {column.tasks.length === 0 && !snapshot.isDraggingOver && (
                     <div className={`flex-1 flex items-center justify-center text-center py-20 border-2 border-dashed rounded-xl ${
                       isDark ? 'border-slate-600 text-slate-500' : 'border-gray-300 text-gray-500'

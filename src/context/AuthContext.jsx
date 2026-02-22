@@ -1,12 +1,13 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import API from '../services/api';
+import { connectSocket, disconnectSocket } from '../utils/socket';
 
 const AuthContext = createContext();
 
 export const useAuth = () => useContext(AuthContext);
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
+  const [user, setUserState] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -20,8 +21,10 @@ export function AuthProvider({ children }) {
 
   const loadUser = async () => {
     try {
-      const { data } = await API.get('/auth/profile');
-      setUser(data);
+      // Fix: _isProfileLoad tells the 401 interceptor not to redirect on token expiry
+      const { data } = await API.get('/auth/profile', { _isProfileLoad: true });
+      setUserState(data);
+      connectSocket();
     } catch (error) {
       console.error('Error loading user:', error);
       localStorage.removeItem('token');
@@ -34,18 +37,20 @@ export function AuthProvider({ children }) {
     try {
       const { data } = await API.post('/auth/login', { email, password });
       localStorage.setItem('token', data.token);
-      setUser(data);
+      setUserState(data);
+      connectSocket();
       return { success: true };
     } catch (error) {
       return { success: false, message: error.response?.data?.message || 'Login failed' };
     }
   };
 
-  const register = async (name, email, password) => {
+  const register = async (payload) => {
     try {
-      const { data } = await API.post('/auth/register', { name, email, password });
+      const { data } = await API.post('/auth/register', payload);
       localStorage.setItem('token', data.token);
-      setUser(data);
+      setUserState(data);
+      connectSocket();
       return { success: true };
     } catch (error) {
       return { success: false, message: error.response?.data?.message || 'Registration failed' };
@@ -54,11 +59,21 @@ export function AuthProvider({ children }) {
 
   const logout = () => {
     localStorage.removeItem('token');
-    setUser(null);
+    disconnectSocket();
+    setUserState(null);
+  };
+
+  // Fix: always merge so isActive and other fields survive profile updates
+  const setUser = (updates) => {
+    if (typeof updates === 'function') {
+      setUserState(updates);
+    } else {
+      setUserState(prev => ({ ...prev, ...updates }));
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, setUser, loading, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

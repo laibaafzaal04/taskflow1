@@ -40,9 +40,12 @@ const projectSchema = new mongoose.Schema({
   timestamps: true 
 });
 
-// Add owner to members if not present
+// Fix: use .toString() comparison — .includes() on ObjectId arrays uses
+// reference equality and always returns false, causing owner duplication on every save
 projectSchema.pre('save', function(next) {
-  if (!this.members.includes(this.owner)) {
+  const ownerStr = this.owner.toString();
+  const alreadyMember = this.members.some(m => m.toString() === ownerStr);
+  if (!alreadyMember) {
     this.members.push(this.owner);
   }
   next();

@@ -1,4 +1,3 @@
-// backend/models/task.js
 import mongoose from 'mongoose';
 
 const taskSchema = new mongoose.Schema({
@@ -41,17 +40,20 @@ const taskSchema = new mongoose.Schema({
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     createdAt: { type: Date, default: Date.now }
   }],
-  commentCount: { 
-    type: Number, 
-    default: 0 
-  },
   createdBy: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'User',
     required: true
   }
 }, { 
-  timestamps: true 
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+});
+
+// Fix: virtual instead of stored field — always accurate, never drifts
+taskSchema.virtual('commentCount').get(function () {
+  return this.comments.length;
 });
 
 // Indexes
